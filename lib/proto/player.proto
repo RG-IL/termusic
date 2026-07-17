@@ -294,8 +294,11 @@ message SortPlaylistRequest {
 
 enum SortCriterion {
   ALPHANUMERIC = 0;
-  FIRST_ADDED = 3;
-  DURATION = 5;
+  FIRST_ADDED = 1;
+  DURATION = 2;
+  MOST_PLAYED = 3;
+  RECENCY = 4;
+  FRECENCY = 5;
 }
 
 enum SortDirection {
