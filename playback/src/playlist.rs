@@ -1,5 +1,4 @@
 use anyhow::{Context, Result, bail};
-use chrono::DateTime;
 use parking_lot::RwLock;
 use pathdiff::diff_paths;
 use rand::RngExt;
@@ -10,6 +9,8 @@ use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use termusiclib::config::SharedServerSettings;
 use termusiclib::config::v2::server::LoopMode;
 use termusiclib::new_database::{Database, track_ops};
@@ -1006,6 +1007,15 @@ impl Playlist {
         db: &Database,
     ) {
         let current_track_file = self.get_current_track_internal();
+        let now = if criterion == SortCriterion::Frecency {
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs()
+                .cast_signed()
+        } else {
+            0
+        };
 
         // We collect into a separate Vec rather than using `sort_by_cached_key`
         // because `score_track` borrows `db` and each track immutably, which
@@ -1013,7 +1023,7 @@ impl Playlist {
         let mut scored: Vec<ScoredTrack> = self
             .tracks
             .iter()
-            .map(|t| score_track(t, criterion, db))
+            .map(|t| score_track(t, criterion, db, now))
             .collect();
 
         sort_scored(&mut scored, criterion, direction);
@@ -1164,18 +1174,32 @@ struct ScoredTrack {
 }
 
 /// Compute the sort key for a single track against the given criterion.
-#[allow(clippy::cast_precision_loss, clippy::cast_sign_loss)]
-fn score_track(track: &Track, criterion: SortCriterion, db: &Database) -> ScoredTrack {
+#[allow(clippy::cast_precision_loss)]
+fn score_track(track: &Track, criterion: SortCriterion, db: &Database, now: i64) -> ScoredTrack {
     let title = track.title().unwrap_or_default().to_string();
     let key = match criterion {
         SortCriterion::Alphanumeric => f64::NEG_INFINITY,
         SortCriterion::Duration => track.duration().map_or(0.0, |d| d.as_secs_f64()),
-        SortCriterion::FirstAdded => track
-            .path()
-            .and_then(|p| track_ops::get_track_from_path(&db.get_connection(), p).ok())
-            .and_then(|x| x.added_at)
-            .and_then(|s| DateTime::parse_from_rfc3339(&s).ok())
-            .map_or(i64::MIN as f64, |dt| dt.timestamp() as f64),
+        SortCriterion::MostPlayed
+        | SortCriterion::Recency
+        | SortCriterion::FirstAdded
+        | SortCriterion::Frecency => {
+            let conn = db.get_connection();
+            let tr = track
+                .path()
+                .and_then(|p| track_ops::get_track_from_path(&conn, p).ok());
+            let (pc, lp, added) = tr.as_ref().map_or((0, None, None), |x| {
+                (x.total_play_count, x.last_played_at, x.added_at)
+            });
+
+            match criterion {
+                SortCriterion::MostPlayed => pc as f64,
+                SortCriterion::Recency => lp.map_or(f64::MIN, |v| v as f64),
+                SortCriterion::FirstAdded => added.map_or(f64::MIN, |v| v as f64),
+                SortCriterion::Frecency => track_ops::frecency_score(pc, lp, now),
+                _ => 0.0,
+            }
+        }
     };
     ScoredTrack {
         track: track.clone(),

@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
@@ -16,7 +16,7 @@ use termusiclib::player::{
     UpdateEvents,
 };
 use termusiclib::podcast::db::Database as DBPod;
-use termusiclib::track::{MediaTypes, Track};
+use termusiclib::track::{MediaTypes, MediaTypesSimple, Track};
 use termusiclib::utils::get_app_config_path;
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::error::SendError;
@@ -480,6 +480,9 @@ impl GeneralPlayer {
             };
             if enqueued_track.as_track_source() == track.as_track_source() {
                 info!("Starting seamless Track {track:#?}");
+
+                self.record_track_play(track);
+
                 run_info.set_current_track(track.clone());
                 drop(playlist);
                 drop(run_info);
@@ -503,7 +506,10 @@ impl GeneralPlayer {
             };
             Handle::current().block_on(wait);
 
+            self.record_track_play(&track);
+
             self.run_info.write().set_current_track(track);
+
             self.set_track_mpris_discord();
             self.player_restore_last_position();
 
@@ -529,6 +535,20 @@ impl GeneralPlayer {
             title: self.media_info().media_title,
             progress: self.get_progress(),
         }));
+    }
+
+    /// Record that a track was started — bumps play count and last-played timestamp.
+    fn record_track_play(&self, track: &Track) {
+        if track.media_type() == MediaTypesSimple::Music
+            && let Some(path) = track.path()
+        {
+            let conn = self.db.get_connection();
+            let _ = track_ops::increment_total_play_count(&conn, path);
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map_or(0, |d| d.as_secs().cast_signed());
+            let _ = track_ops::set_last_played_at(&conn, path, now);
+        }
     }
 
     /// Set the current track for extra services like Media Control or discord.
