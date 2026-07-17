@@ -1,5 +1,3 @@
-use std::cell::Cell;
-
 use termusiclib::config::SharedTuiSettings;
 use termusiclib::player::{SortCriterion, SortDirection};
 use tui_realm_stdlib::components::Table;
@@ -17,6 +15,7 @@ use crate::ui::ids::Id;
 use crate::ui::model::{Model, UserEvent};
 use crate::ui::msg::{Msg, SortPopupMsg};
 
+/// Describes one sort criterion with its key bindings and display labels.
 struct SortHint {
     ascending_key: char,
     descending_key: char,
@@ -36,12 +35,36 @@ const SORT_HINTS: &[SortHint] = &[
         desc_description: "Filename Z\u{2192}A",
     },
     SortHint {
+        ascending_key: 'f',
+        descending_key: 'F',
+        criterion: SortCriterion::MostPlayed,
+        label: "Most Played",
+        asc_description: "Play count least\u{2192}most",
+        desc_description: "Play count most\u{2192}least",
+    },
+    SortHint {
+        ascending_key: 'c',
+        descending_key: 'C',
+        criterion: SortCriterion::Recency,
+        label: "Recency",
+        asc_description: "Last played oldest\u{2192}newest",
+        desc_description: "Last played newest\u{2192}oldest",
+    },
+    SortHint {
         ascending_key: 't',
         descending_key: 'T',
         criterion: SortCriterion::FirstAdded,
         label: "First Added",
         asc_description: "Date added oldest\u{2192}newest",
         desc_description: "Date added newest\u{2192}oldest",
+    },
+    SortHint {
+        ascending_key: 'b',
+        descending_key: 'B',
+        criterion: SortCriterion::Frecency,
+        label: "Frecency",
+        asc_description: "Freq + recency (zoxide) low\u{2192}high",
+        desc_description: "Freq + recency (zoxide) high\u{2192}low",
     },
     SortHint {
         ascending_key: 'd',
@@ -78,6 +101,7 @@ fn table_data(direction: SortDirection) -> tuirealm::props::Table {
     builder.build()
 }
 
+/// Build the full `Table` widget with borders, styling, and headers.
 fn build_table(config: &SharedTuiSettings, direction: SortDirection) -> Table {
     let config = config.read();
     let table = table_data(direction);
@@ -92,7 +116,7 @@ fn build_table(config: &SharedTuiSettings, direction: SortDirection) -> Table {
                 .modifiers(BorderType::Rounded)
                 .color(config.settings.theme.fallback_border()),
         )
-        .inactive(Style::new().bg(config.settings.theme.library_background()))
+        .inactive(Style::new().bg(config.settings.theme.fallback_background()))
         .foreground(config.settings.theme.fallback_foreground())
         .background(config.settings.theme.fallback_background())
         .highlight_style(
@@ -111,21 +135,26 @@ fn build_table(config: &SharedTuiSettings, direction: SortDirection) -> Table {
         .table(table)
 }
 
+/// Sort popup component — displays available sort criteria with key hints.
 #[derive(Component)]
 pub struct SortPopup {
     component: Table,
-    direction: Cell<SortDirection>,
+    direction: SortDirection,
+    config: SharedTuiSettings,
 }
 
 impl SortPopup {
+    /// Create a new sort popup with ascending direction selected.
     pub fn new(config: &SharedTuiSettings) -> Self {
         let component = build_table(config, SortDirection::Asc);
         Self {
             component,
-            direction: Cell::new(SortDirection::Asc),
+            direction: SortDirection::Asc,
+            config: config.clone(),
         }
     }
 
+    /// Match a character against the sort hint key bindings.
     fn match_key(ch: char) -> Option<(SortCriterion, SortDirection)> {
         for hint in SORT_HINTS {
             if ch == hint.ascending_key {
@@ -138,10 +167,11 @@ impl SortPopup {
         None
     }
 
+    /// Update the table content in place, preserving the active row highlight.
+    ///
+    /// Replacing the whole component would drop the `is_active` flag,
+    /// making the selection highlight disappear.
     fn rebuild(&mut self, direction: SortDirection) {
-        // Update the existing component in place so it keeps its `is_active`
-        // flag (and therefore its visible row highlight). Replacing the whole
-        // component would drop the active state, making the highlight disappear.
         let idx = match self.component.state() {
             State::Single(StateValue::Usize(i)) => Some(i),
             _ => None,
@@ -166,35 +196,35 @@ impl SortPopup {
         }
     }
 
+    /// Return the currently highlighted sort criterion and direction, if any.
     fn selected_criterion(&self) -> Option<(SortCriterion, SortDirection)> {
         let State::Single(StateValue::Usize(idx)) = self.component.state() else {
             return None;
         };
-        SORT_HINTS
-            .get(idx)
-            .map(|h| (h.criterion, self.direction.get()))
+        SORT_HINTS.get(idx).map(|h| (h.criterion, self.direction))
     }
 }
 
 impl AppComponent<Msg, UserEvent> for SortPopup {
     fn on(&mut self, ev: &Event<UserEvent>) -> Option<Msg> {
+        let config = self.config.clone();
+        let keys = &config.read().settings.keys;
         match ev {
             Event::Keyboard(KeyEvent {
                 code: Key::Char(ch),
                 ..
             }) => {
-                if *ch == 'q' {
-                    return Some(Msg::SortPopup(SortPopupMsg::Close));
-                }
                 if let Some((criterion, direction)) = Self::match_key(*ch) {
                     return Some(Msg::SortPopup(SortPopupMsg::Selected(criterion, direction)));
                 }
                 None
             }
-            Event::Keyboard(KeyEvent {
-                code: Key::Esc,
-                modifiers: KeyModifiers::NONE,
-            }) => Some(Msg::SortPopup(SortPopupMsg::Close)),
+            Event::Keyboard(key) if key == keys.quit.get() => {
+                Some(Msg::SortPopup(SortPopupMsg::Close))
+            }
+            Event::Keyboard(key) if key == keys.escape.get() => {
+                Some(Msg::SortPopup(SortPopupMsg::Close))
+            }
             Event::Keyboard(KeyEvent {
                 code: Key::Enter,
                 modifiers: KeyModifiers::NONE,
@@ -205,23 +235,22 @@ impl AppComponent<Msg, UserEvent> for SortPopup {
                 code: Key::Tab,
                 modifiers: KeyModifiers::NONE,
             }) => {
-                let new_dir = match self.direction.get() {
+                self.direction = match self.direction {
                     SortDirection::Asc => SortDirection::Desc,
                     SortDirection::Desc => SortDirection::Asc,
                 };
-                self.direction.set(new_dir);
-                self.rebuild(new_dir);
-                None
+                self.rebuild(self.direction);
+                Some(Msg::ForceRedraw)
             }
             Event::Keyboard(KeyEvent { code: Key::Up, .. }) => {
                 self.perform(Cmd::Move(Direction::Up));
-                None
+                Some(Msg::ForceRedraw)
             }
             Event::Keyboard(KeyEvent {
                 code: Key::Down, ..
             }) => {
                 self.perform(Cmd::Move(Direction::Down));
-                None
+                Some(Msg::ForceRedraw)
             }
             _ => None,
         }
@@ -229,6 +258,7 @@ impl AppComponent<Msg, UserEvent> for SortPopup {
 }
 
 impl Model {
+    /// Mount the sort popup, hiding the album cover behind it.
     pub fn mount_sort_popup(&mut self) {
         assert!(
             self.app
@@ -243,6 +273,7 @@ impl Model {
         assert!(self.app.active(&Id::SortPopup).is_ok());
     }
 
+    /// Unmount the sort popup.
     pub fn umount_sort_popup(&mut self) {
         self.app.umount(&Id::SortPopup).ok();
     }
