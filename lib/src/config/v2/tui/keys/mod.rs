@@ -2165,7 +2165,11 @@ mod v1_interop {
                     tuievents::KeyModifiers::SHIFT,
                 )
                 .into(),
-                sort: KeysPlaylist::default().sort,
+                sort: tuievents::KeyEvent::new(
+                    tuievents::Key::Char(','),
+                    tuievents::KeyModifiers::empty(),
+                )
+                .into(),
             };
             assert_eq!(converted.playlist_keys, expected_playlist_keys);
 

@@ -248,7 +248,7 @@ impl InsertTrack<'_> {
             RETURNING id;
         "})?;
 
-        let now = chrono::Utc::now().to_rfc3339();
+        let now = chrono::Utc::now().timestamp();
         let duration = self.duration.map(|v| v.as_secs().cast_signed());
         let last_position = self.last_position.map(|v| v.as_secs().cast_signed());
 
@@ -259,7 +259,7 @@ impl InsertTrack<'_> {
                 ":file_ext": self.file_ext,
                 ":duration": duration,
                 ":last_position": last_position,
-                ":added_at": &now,
+                ":added_at": now,
                 ":album": self.album
             },
             |row| row.get(0),
