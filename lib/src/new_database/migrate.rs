@@ -57,9 +57,11 @@ fn apply_migrations(conn: &Connection, mut user_version: u32) -> Result<()> {
 
     if user_version == 1 {
         // Add total_play_count and last_played_at columns for sort support (MostPlayed, Recency, FirstAdded, Frecency)
-        conn.execute_batch(include_str!("./migrations/002.sql"))
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch(include_str!("./migrations/002.sql"))
             .context("Database version 2 migration failed")?;
-        user_version = set_user_version(conn, 2)?;
+        set_user_version(&tx, 2)?;
+        tx.commit()?;
     }
 
     set_last_updated_at(conn)?;

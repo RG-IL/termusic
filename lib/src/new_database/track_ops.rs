@@ -124,6 +124,7 @@ pub fn get_all_tracks(conn: &Connection, order: RowOrdering) -> Result<Vec<Track
     let stmt = formatdoc! {"
         SELECT 
             tracks.id AS track_id, tracks.file_dir, tracks.file_stem, tracks.file_ext, tracks.duration, tracks.last_position,
+            tracks.added_at,
             tracks.total_play_count, tracks.last_played_at,
             tracks_metadata.title AS track_title, tracks_metadata.artist_display, tracks_metadata.genre,
             albums.id AS album_id, albums.title AS album_title
@@ -238,6 +239,7 @@ pub fn get_tracks_from_album(
     let stmt = formatdoc! {"
         SELECT 
             tracks.id AS track_id, tracks.file_dir, tracks.file_stem, tracks.file_ext, tracks.duration, tracks.last_position,
+            tracks.added_at,
             tracks.total_play_count, tracks.last_played_at,
             tracks_metadata.title AS track_title, tracks_metadata.artist_display, tracks_metadata.genre,
             albums.id AS album_id, albums.title AS album_title
@@ -278,6 +280,7 @@ pub fn get_tracks_from_artist(
     let stmt = formatdoc! {"
         SELECT 
             tracks.id AS track_id, tracks.file_dir, tracks.file_stem, tracks.file_ext, tracks.duration, tracks.last_position,
+            tracks.added_at,
             tracks.total_play_count, tracks.last_played_at,
             tracks_metadata.title AS track_title, tracks_metadata.artist_display, tracks_metadata.genre,
             albums.id AS album_id, albums.title AS album_title
@@ -325,6 +328,7 @@ pub fn get_tracks_from_genre(
     let stmt = formatdoc! {"
         SELECT
             tracks.id AS track_id, tracks.file_dir, tracks.file_stem, tracks.file_ext, tracks.duration, tracks.last_position,
+            tracks.added_at,
             tracks.total_play_count, tracks.last_played_at,
             tracks_metadata.title AS track_title, tracks_metadata.artist_display, tracks_metadata.genre,
             albums.id AS album_id, albums.title AS album_title
@@ -365,11 +369,12 @@ pub fn get_tracks_from_directory(
     let stmt = formatdoc! {"
         SELECT 
             tracks.id AS track_id, tracks.file_dir, tracks.file_stem, tracks.file_ext, tracks.duration, tracks.last_position,
+            tracks.added_at,
             tracks.total_play_count, tracks.last_played_at,
             tracks_metadata.title AS track_title, tracks_metadata.artist_display, tracks_metadata.genre,
             albums.id AS album_id, albums.title AS album_title
         FROM tracks
-        LEFT JOIN tracks_metadata ON tracks.id=tracks_metadata.track
+        LEFT JOIN tracks_metadata ON tracks.id = tracks_metadata.track
         LEFT JOIN albums ON tracks.album = albums.id
         WHERE tracks.file_dir=:dir
         ORDER BY {};
@@ -402,6 +407,7 @@ pub fn get_tracks_from_genre_like(
     let stmt = formatdoc! {"
         SELECT
             tracks.id AS track_id, tracks.file_dir, tracks.file_stem, tracks.file_ext, tracks.duration, tracks.last_position,
+            tracks.added_at,
             tracks.total_play_count, tracks.last_played_at,
             tracks_metadata.title AS track_title, tracks_metadata.artist_display, tracks_metadata.genre,
             albums.id AS album_id, albums.title AS album_title
@@ -794,9 +800,13 @@ mod tests {
 
         let all_tracks = get_all_tracks(&db.get_connection(), RowOrdering::IdAsc).unwrap();
 
+        let mut expected = all_tracks[0].clone();
+        let inserted_at = expected.added_at.take();
+        assert!(inserted_at.is_some(), "added_at should be set by insert");
+
         assert_eq!(
-            all_tracks,
-            &[TrackRead {
+            expected,
+            TrackRead {
                 id: 1,
                 file_dir: PathBuf::from("/somewhere"),
                 file_stem: OsString::from("file"),
@@ -817,7 +827,7 @@ mod tests {
                     id: 1,
                     name: "ArtistA".to_string()
                 }]
-            }]
+            }
         );
     }
 

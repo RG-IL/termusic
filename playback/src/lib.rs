@@ -543,11 +543,18 @@ impl GeneralPlayer {
             && let Some(path) = track.path()
         {
             let conn = self.db.get_connection();
-            let _ = track_ops::increment_total_play_count(&conn, path);
+            if let Err(e) = track_ops::increment_total_play_count(&conn, path) {
+                warn!(
+                    "Failed to increment play count for {}: {e:#}",
+                    path.display()
+                );
+            }
             let now = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .map_or(0, |d| d.as_secs().cast_signed());
-            let _ = track_ops::set_last_played_at(&conn, path, now);
+            if let Err(e) = track_ops::set_last_played_at(&conn, path, now) {
+                warn!("Failed to set last played at for {}: {e:#}", path.display());
+            }
         }
     }
 
