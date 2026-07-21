@@ -311,6 +311,9 @@ impl HelpPopup {
                         ))
                         .add_col(Self::comment("Select random tracks/albums to playlist"))
                         .add_row()
+                        .add_col(Self::key(&config, &[&keys.playlist_keys.sort]))
+                        .add_col(Self::comment("Open sort popup menu"))
+                        .add_row()
                         .add_col(Self::header(&config, "Database"))
                         .add_row()
                         .add_col(Self::key(

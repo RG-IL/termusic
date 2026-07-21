@@ -5,4 +5,4 @@
 # VSCode relation configuration
 .vscode
 .worktrees
-.cortexkit
+.cortexkit/
